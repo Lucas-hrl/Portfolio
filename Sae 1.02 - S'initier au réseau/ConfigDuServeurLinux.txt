@@ -1,0 +1,72 @@
+Config Serveur Linux
+
+pour le dhcp : service isc-dhcp-server restart
+	       service isc-dhcp-server enable
+	       service isc-dhcp-server status
+
+---------> nano /etc/dhcp/dhcpd.conf
+
+[IMPORTANT]
+mettre # sur option domain-name.... (les 2 lignes)
+
+Enlever le # sur les lignes suivantes :
+
+ddns-update-style none;
+
+default-lease-time 600;
+max-lease-time 7200;
+authoritative;
+
+
+#bloquer les réseaux non-voulus #le vlan 30 ou se trouve le serveur pour qu'il ne s'attribue pas d'addresse
+subnet 172.20.27.40 netmask 255.255.255.248 {  
+	deny unknown-clients;
+} 
+#vlan 10
+subnet 172.20.27.32 netmask 255.255.255.248 {
+	range 172.20.27.33 172.20.27.37;
+	option routers 172.20.27.38;
+}
+#vlan 20
+subnet 172.20.27.0 netmask 255.255.255.224 {
+	range 172.20.27.1 172.20.27.29;
+	option routers 172.20.27.30;
+}
+
+
+
+
+--------->    nano /etc/default/isc-dhcp-server
+
+INTERFACES="ens3" #l'interface du serveur
+
+[IMPORTANT]
+
+Enlever le # sur les lignes
+
+DHCPD_CONF=/etc/dhcp/dhcpd.conf
+
+DHCPD_PID=/var/run/dhcpd.pid
+
+
+
+--------->      nano /etc/network/interfaces
+
+auto lo
+iface lo inet loopback
+
+
+auto ens3
+iface ens3 inet static
+	address 172.20.27.41
+	netmask 255.255.255.248
+	gateway 172.20.27.46
+
+
+!!ne pas oublier : service networking restart !!
+
+
+
+
+
+
