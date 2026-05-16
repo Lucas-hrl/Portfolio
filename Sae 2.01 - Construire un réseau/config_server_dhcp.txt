@@ -1,0 +1,26 @@
+commande pour vérifier que le fichier de conf n'a pas d'erreur --> sudo dhcpd -t -cf /etc/dhcp/dhcpd.conf
+
+
+nano /etc/dhcp/dhcpd.conf (voir la config de la sae 1.02)
+
+
+#pour que le serveur ne s'attribue pas d'addresse
+subnet 192.168.35.176 netmask 255.255.255.252 {
+        deny unknown-clients;
+}
+
+#Réseau du VLAN 100
+subnet 192.168.35.128 netmask 255.255.255.248 {
+        range 192.168.35.130 192.168.35.134;
+        option routers 192.168.35.129;
+}
+#Réseau du VLAN 200
+subnet 192.168.35.136 netmask 255.255.255.248 {
+        range 192.168.35.138 192.168.35.141;
+        option routers 192.168.35.137;
+}
+#Réseau du vlan 300
+subnet 192.168.35.144 netmask 255.255.255.248 {
+        range 192.168.35.146 192.168.35.149;
+        option routers 192.168.35.145;
+}

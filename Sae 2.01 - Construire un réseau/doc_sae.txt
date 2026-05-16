@@ -1,0 +1,225 @@
+
+IP adresse réseau: 192.168.35.128/25
+
+
+
+<--------------------------------------------------------------- Adresses réseau ------------------------------------------------>
+adresse réseau Vlan 100: 192.168.35.128/29  .248 pour 4 adresses car 2 non dispo
+adresse réseau Vlan 200: 192.168.35.136/29
+adresse réseau Vlan 300: 192.168.35.144/29
+Production : 192.168.35.152/29
+
+interco switch routeur : 192.168.35.160/30
+interco r1 routeur_bordure(R3) : 192.168.35.164/30
+interco r1 R2) : 192.168.35.168/30
+interco r3 R2) : 192.168.35.172/30
+réseau du dhcp : 192.168.35.176/30
+
+
+
+<---------------------------------------------------- Adresses IP des serveurs ------------------------------------------------>
+server sauvegarde : ip :192.168.35.150/29
+server dev : ip : 192.168.35.142/29
+serveur-prod : ip : 192.168.35.158/29
+server dhcp : 192.168.35.177 255.255.255.252
+
+
+
+
+<--------------------------------------------------- Adresses IP des interfaces ----------------------------------------------->
+int de comm-fed qui est la passerelle du serveur dhcp : 
+interface GigabitEthernet1/0
+ no switchport
+ ip address 192.168.35.178 255.255.255.252
+
+sur comm-fed: interface Vlan100
+ ip address 192.168.35.129 255.255.255.248
+ ip helper-address 192.168.35.177
+!
+interface Vlan200
+ ip address 192.168.35.137 255.255.255.248
+ ip helper-address 192.168.35.177
+!
+interface Vlan300
+ ip address 192.168.35.145 255.255.255.248
+ ip helper-address 192.168.35.177
+ 
+int gi2/0 (comm-fed vers R1) : ip address 192.168.35.161 255.255.255.252
+
+int R1: vers R3: f0/1 ip address 192.168.35.165 255.255.255.252
+		vers R2: f0/0 : ip address 192.168.35.169  255.255.255.252
+		vers comm-fed: f1/0 : ip address 192.168.35.162 255.255.255.252
+		
+int R2: vers R1: f0/0 ip address 192.168.35.170 255.255.255.252
+		vers R3: f0/1 : ip address 192.168.35.173  255.255.255.252
+		vers production: f1/0 : ip address 192.168.35.153 255.255.255.248
+		
+int R3: vers R1: f0/0 ip address 192.168.35.166 255.255.255.252
+		vers R2: f0/1 : ip address 192.168.35.174  255.255.255.252
+
+		
+	
+----------------------------------------vlan natif-------------------------------------------
+interface GigabitEthernet0/1
+ description Lien trunk vers un autre switch
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk encapsulation dot1q
+ switchport trunk allowed vlan all
+ vlan dot1q tag native  ! ← C’est cette ligne qui force le tag
+
+
+
+
+----------------------------------------------------------------------------ftp --------------------------------------------------------
+sudo apt install vsftpd
+ds sudo nano /etc/vsftpd.conf:
+# Autoriser l'accès anonyme
+anonymous_enable=YES
+anon_root=/srv/ftp
+
+# Autoriser les utilisateurs locaux (Antoine, Élise)
+local_enable=YES
+write_enable=YES
+
+# Sécurité et accès
+chroot_local_user=YES
+allow_writeable_chroot=YES
+
+# Active le mode passif (utile pour les connexions derrière NAT)
+pasv_enable=YES
+pasv_min_port=40000
+pasv_max_port=50000
+
+# Activer les logs (facultatif mais utile)
+xferlog_enable=YES
+
+allow_writeable_chroot=YES
+
+
+Répertoire pour l'accès anonyme (lecture seule)
+sudo mkdir -p /srv/ftp
+sudo chmod 755 /srv/ftp
+sudo chown ftp:ftp /srv/ftp
+
+
+Répertoires pour Antoine et Élise
+sudo useradd -m Antoine
+sudo passwd toto
+
+sudo useradd -m Elise
+sudo passwd toto
+
+
+Créer des répertoires de travail :
+sudo mkdir /home/Antoine/ftp
+sudo mkdir /home/Elise/ftp
+
+sudo chown Antoine:Antoine /home/Antoine/ftp
+sudo chown Elise:Elise /home/Elise/ftp
+
+sudo chmod 755 /home/Antoine
+sudo chmod 755 /home/Elise
+sudo chmod a-w /home/Elise
+
+sudo systemctl restart vsftpd
+
+
+
+Pour tester aller sur poste-dev : créer un fichier touch fich.txt
+ftp 192.168.35.150
+antoine toto 
+put test.txt 
+ls
+----------------------------------------Router rip -------------------------------------
+
+router rip
+ version 2
+ no auto-summary
+ network 192.168.35.164 #adresses des réseaux concernés
+ network 192.168.35.168
+
+	
+<-----------------------------------------pour config du spanning tree --------------------------------------------------->
+comm_fed (switch racine)
+	spanning-tree mode pvst   #Per-VLAN Spanning Tree (1 instance STP par VLAN)
+	spanning-tree extend system-id  #Permet à plusieurs instances STP (une par VLAN) de coexister sans conflit d’identifiants
+	spanning-tree vlan 100 priority 4096  #les priorité doivent etre multiple de 4096
+	spanning-tree vlan 200 priority 8192  #priorité la plus basse = racine
+	spanning-tree vlan 300 priority 12288  #priorité par défaut = 32768
+	
+comm_1 
+	spanning-tree mode pvst
+	spanning-tree extend system-id
+	spanning-tree vlan 100,200,300 priority 28672
+
+
+
+
+
+<------------------------------------------------------- Sécurité des ports comm_1 ---------------------------------------------->
+A faire pour chaque port des vlan en mode access
+
+int range gi1/0 -3 
+ switchport port-security
+ switchport port-security maximum 1  #autorise 1 MAC
+ switchport port-security violation restrict  #bloque la co sans éteindre le port
+ switchport port-security mac-address sticky   #enregistre la 1ere MAC vue
+
+
+
+
+
+<---------------------------------------------------------------------ACL sur R2 ----------------------------------------------------->
+les ACL (access-list) permettent d'autoriser ou interdire du traffic
+#le numéro doit etre entre 100 et 199 pour filtrer des protoccoles et ports specifiques
+	access-list 106 permit tcp any any eq 80  #autorise tcp sur port 80 (http)
+	access-list 106 permit tcp any any eq 22  #autorise tcp sur port 22 (ssh)
+	access-list 106 permit tcp any any eq 873 #autorise tcp sur port 873 (rsynch pour le serveur web)
+	access-list 106 deny ip any any			  #interdit tous les autres paquets ip (pas obligatoire car automatique)
+	
+	ensuite il faut appliquer cette liste a l'int voulue 
+	int f0/0
+		ip access-group 106 in #(traffic entrant)
+	int f1/0
+		ip access-group 106 out  #(traffic sortant)
+	int f0/1
+		ip access-group 106 in
+
+
+
+
+<------------------------------------------------------------ACL sur R3 -------------------------------------------------------->
+access-list 116 permit udp any any eq 67  #autorise le dhcp
+access-list 116 permit udp any any eq 68  #autorise le dhcp
+access-list 116 permit tcp any any eq 80
+access-list 116 permit icmp any any 
+access-list 116 deny ip any any
+int f1/0 #(vers cloud)
+	ip acces-group 116 in 
+	
+
+
+------------------------------------------- NAT sur R3 -----------------------------------------------
+int f1/0  #interface de sortie 
+ip nat outside
+int f0/0
+ip nat inside
+int f0/1
+ip nat inside
+access-list 1 permit 192.168.35.128 0.0.0.127 #acl pour autoriser le réseau interne 192.168.35.128 avec wildmask
+ip nat inside source list 1 int f1/0 overload #tous les paquets venant de la liste1 passant par int sortie sont naté en PAT (pls ip internes en 1 ip publique)
+router rip 
+default-information originate   #permet d'envoyer une route par défaut a tous les routers rip
+
+
+<----------------------------------------------------- Synchroniser 2 srv web apache2 ------------------------------------------>
+
+sur serveur client  :
+	usermod -aG www-data debian      	# ajoute debian au groupe www-data (pour apache)
+	sudo chown -R www-data:www-data /var/www/html    #attribue le rep et ce qu'il contient au user www-data et group www-data
+	sudo chmod -R 775 /var/www/html  #autorise a ecrire
+	
+	srv src : 
+		rsync -avz /var/www/html/index.html debian@192.168.35.158:/var/www/html/index.html  #debian est l'utilisateur auquel on se connecte et l'ip du srv client avec le chemin
+cat /var/www/html/index.html
