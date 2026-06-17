@@ -1,0 +1,69 @@
+git clone https://github.com/Lucas-hrl/SAE204.git
+cd SAE204
+python3 -m venv venv
+source venv/bin/activate
+pip install django gunicorn
+pip install -r requirements.txt
+gunicorn --workers 3 --bind 127.0.0.1:8000 myproject.wsgi:application
+
+
+
+
+nano /etc/nginx/sites-available/myproject
+                    
+server {
+    listen 80;
+    server_name 10.252.9.131;
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location /static/ {
+        alias /home/monuserdjango/myproject/static/;
+    }
+
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/run/gunicorn.sock;
+    }
+}
+
+sudo ln -s /etc/nginx/sites-available/myproject /etc/nginx/sites-enabled/
+sudo systemctl reload nginx
+sudo systemctl restart gunicorn.service 
+
+
+
+
+# /etc/systemd/system/gunicorn.service 
+[Unit]
+Description=gunicorn daemon for Django project
+After=network.target
+Requires=gunicorn.socket
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/home/monuserdjango/myproject
+ExecStart=/home/monuserdjango/myproject/venv/bin/gunicorn \
+        --workers 3 \
+        --bind unix:/run/gunicorn.sock \
+        myproject.wsgi:application
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+systemctl daemon-reload
+sudo systemctl start gunicorn
+sudo systemctl enable gunicorn
+python manage.py collectstatic
+
+sudo chown -R monuserdjango:www-data monuserdjango/
+chown -R www-data:www-data /home/monuserdjango/
+
+sudo systemctl restart gunicorn.service
+sudo nginx -t
+sudo systemctl enable nginx
+sudo systemctl status gunicorn
+
+

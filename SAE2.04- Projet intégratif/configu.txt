@@ -1,0 +1,314 @@
+***********VLAN*********** [SWITCH]
+
+
+enable
+configure terminal
+
+vlan 100
+ name Voix
+vlan 200
+ name Utilisateurs
+vlan 300
+ name Serveur
+vlan 400
+ name Administrateur
+
+interface range fa0/1 - 2
+ switchport mode access
+ switchport access vlan 100
+
+interface range fa0/3 - 4
+ switchport mode access
+ switchport access vlan 200
+
+interface range fa0/5 - 6
+ switchport mode access
+ switchport access vlan 300
+
+interface range fa0/7 - 8
+ switchport mode access
+ switchport access vlan 400
+
+interface fa0/24
+ switchport mode trunk
+switchport trunk allowed vlan 100,200,300,400	
+
+
+
+
+
+***********Interfaces VLAN avec dot1Q*********** [Routeur]
+
+
+enable
+configure terminal
+
+interface g0/0.100
+ encapsulation dot1Q 100
+ ip address 10.252.9.1 255.255.255.192
+ip nat inside
+ no shutdown
+
+interface g0/0.200
+ encapsulation dot1Q 200
+ ip address 10.252.9.65 255.255.255.192
+ip nat inside
+ no shutdown
+
+interface g0/0.300
+ encapsulation dot1Q 300
+ ip address 10.252.9.129 255.255.255.192
+ip nat inside
+ no shutdown
+
+interface g0/0.400
+ encapsulation dot1Q 400
+ ip address 10.252.9.193 255.255.255.192
+ip nat inside
+ no shutdown
+
+interface g0/0
+ no shutdown
+
+
+***********DHCP pour chaque VLAN*********** [Routeur]
+
+ip dhcp excluded-address 10.252.9.1 10.252.9.10
+ip dhcp excluded-address 10.252.9.65 10.252.9.74
+ip dhcp excluded-address 10.252.9.129 10.252.9.138
+ip dhcp excluded-address 10.252.9.193 10.252.9.202
+
+ip dhcp pool VLAN100
+ network 10.252.9.0 255.255.255.192
+ default-router 10.252.9.1
+ dns-server 10.252.9.1
+
+ip dhcp pool VLAN200
+ network 10.252.9.64 255.255.255.192
+ default-router 10.252.9.65
+ dns-server 10.252.9.65
+
+ip dhcp pool VLAN300
+ network 10.252.9.128 255.255.255.192
+ default-router 10.252.9.129
+ dns-server 10.252.9.129
+
+ip dhcp pool VLAN400
+ network 10.252.9.192 255.255.255.192
+ default-router 10.252.9.193
+ dns-server 10.252.9.193
+
+
+***********NAT vers Internet*********** [Routeur]
+
+interface g0/1
+ ip address dhcp
+ ip nat outside
+ no shutdown
+
+interface g0/0
+ ip nat inside
+
+access-list 1 permit 10.252.9.0 0.0.0.255
+
+ip nat inside source list 1 interface GigabitEthernet0/1 overload
+
+
+ip route 0.0.0.0 0.0.0.0 g0/1
+
+
+***********ACL de filtrage ICMP*********** [Routeur]
+
+access-list 110 deny icmp 10.252.9.64 0.0.0.63 10.252.9.192 0.0.0.63 echo
+access-list 110 permit icmp any any
+access-list 110 permit ip any any
+
+interface g0/0.200
+ ip access-group 110 in
+
+
+***********Port Mirroring*********** [SWITCH]
+
+monitor session 1 source interface fa0/24
+monitor session 1 destination interface fa0/9
+
+monitor session 2 source vlan 100
+monitor session 2 destination interface fa0/10
+
+
+
+
+***********Configuration serveur Debian (VLAN 300)*********** 
+
+auto ens33
+iface ens33 inet static
+  address 10.252.Y+2.11
+  netmask 255.255.255.0
+  gateway 10.252.Y+2.1
+  dns-nameservers 10.252.4.42
+
+
+
+
+***********iptables (sur le serveur)***********
+sudo iptables -F  # Vider toutes les règles
+sudo iptables -P INPUT ACCEPT
+sudo iptables -P OUTPUT DROP
+sudo iptables -P FORWARD DROP
+
+sudo iptables -A INPUT -p udp --dport 514 -j ACCEPT
+sudo iptables -A OUTPUT -p udp --dport 514 -j ACCEPT
+
+
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT   # Autoriser HTTP entrant
+sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT  # Autoriser HTTPS entrant
+
+
+sudo iptables -A OUTPUT -p tcp --sport 80 -j ACCEPT  # Autoriser HTTP sortant
+sudo iptables -A OUTPUT -p tcp --sport 443 -j ACCEPT # Autoriser HTTPS sortant
+
+sudo iptables -A INPUT -p udp --dport 53 -j ACCEPT
+sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+sudo iptables -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
+sudo iptables -A INPUT -p icmp --icmp-type echo-request -j REJECT
+
+
+sudo iptables -A INPUT -p tcp --dport 21 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 20 -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --sport 21 -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --sport 20 -j ACCEPT
+
+
+
+
+
+
+
+
+# Vider les règles existantes
+iptables -F
+
+# Politique par défaut : bloquer
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+
+# Interface locale
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+
+# Connexions établies
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# DNS
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A INPUT -p udp --dport 53 -j ACCEPT
+
+# HTTP/HTTPS
+iptables -A OUTPUT -p tcp --dport 80 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+
+# PING : serveur peut pinguer, mais ne peut pas être pingué
+iptables -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
+iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+
+# NTP
+iptables -A OUTPUT -p udp --dport 123 -j ACCEPT
+
+# Rsyslog
+iptables -A INPUT -p udp --dport 514 -j ACCEPT
+
+# FTP
+iptables -A INPUT -p tcp --dport 21 -j ACCEPT
+iptables -A INPUT -p tcp --dport 20 -j ACCEPT
+
+#BDD
+sudo iptables -A OUTPUT -p tcp --dport 3306 -j ACCEPT
+sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+#MQTT
+sudo iptables -A OUTPUT -p tcp --dport 1883 -j ACCEPT
+
+
+
+sudo apt install iptables-persistent
+sudo netfilter-persistent save
+sudo netfilter-persistent reload
+
+***********Services à installer sur le serveur Debian***********
+
+apt update
+apt install ntp vsftpd rsyslog -y
+
+# NTP
+nano /etc/ntp.conf
+# Ajouter : server fr.pool.ntp.org
+# Configuration NTP (UTC+2)
+sudo timedatectl set-timezone Europe/Paris
+
+
+# Rsyslog : accepter les logs du routeur
+
+# Activer la réception syslog UDP sur port 514
+echo '$ModLoad imudp' | sudo tee -a /etc/rsyslog.conf
+echo '$UDPServerRun 514' | sudo tee -a /etc/rsyslog.conf
+
+# Créer configuration pour logs Cisco
+sudo mkdir /var/log/cisco
+echo ':fromhost-ip, isequal, "10.252.9.130" /var/log/cisco/router.log' | sudo tee /etc/rsyslog.d/10-cisco.conf
+echo '& stop' | sudo tee -a /etc/rsyslog.d/10-cisco.conf
+
+# Redémarrer rsyslog
+sudo systemctl restart rsyslog
+
+
+logging on
+logging host 10.252.9.131
+logging trap debugging
+logging buffered 16384 debugging
+
+#voir les logs
+sudo tail -f /var/log/cisco/router.log
+
+
+
+ntp server fr.pool.ntp.org
+clock timezone CET 2
+clock summer-time CEST recurring
+end
+en
+conf t
+clock timezone CET 1 0
+sh clock
+
+
+#dns forwarder 
+ip dns server
+ip host www.sae24.rt 10.252.9.131
+(ip host ns.sae24.rt 192.168.1.1)
+ip name-server 10.252.4.42
+
+
+
+
+
+logging 10.252.9.131
+do sh logging
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

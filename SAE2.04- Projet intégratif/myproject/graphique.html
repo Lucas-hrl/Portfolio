@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphique des Températures</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="{% static 'style.css' %}?v=2">
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1 class="main-title">Graphique des Températures</h1>
+        </header>
+        
+        <section>
+            <h2 class="section-title">Visualisation des Données</h2>
+            <div class="graph">
+                {{ graph|safe }}
+            </div>
+        </section>
+        
+        <section>
+            <div class="nav-grid">
+                <a href="{% url 'index' %}" class="btn btn-secondary">
+                    <span class="btn-text">← Retour à l'accueil</span>
+                </a>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
+
